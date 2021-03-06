@@ -61,7 +61,9 @@ Again, keep in mind it has to be at least 0xA size and possibly larger depending
 
 ## TODO
 
-- 
+- Rework dispatch table to allow for a smaller code cave by pivoting to a heap-allocated dispatch table
+- Fix up RIP-relative instructions to allow them inside trampolines
+- Possibly do more robust function size calculation (size directives?)
 
 ## License
 Specter (Cryptogenic) - [@SpecterDev](https://twitter.com/specterdev)
