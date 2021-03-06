@@ -89,6 +89,7 @@ void kernel_initialize_dispatch(struct thread *td, void *argUnused)
     {
         // Tag value to crash on a known pointer on an uninitialized hook
         dispatch->entries[i].payloadAddress   = (void *)0x31313131;
+        dispatch->entries[i].payloadSize      = 0;
         dispatch->entries[i].trampolineOffset = 0;
     }
 
@@ -167,8 +168,9 @@ void kernel_install_hook(struct thread *td, void *argUnused)
     writeCr0(cr0 & ~X86_CR0_WP);
 
     // The trampoline will always immediately follow the hook function
-    dispatch->entries[args.id].payloadAddress = hookPayload;
-    dispatch->entries[args.id].trampolineOffset = args.hookFunctionSize;
+    dispatch->entries[args.id].payloadAddress   = hookPayload;
+    dispatch->entries[args.id].payloadSize      = jumpBackIndex + 0x10;
+    dispatch->entries[args.id].trampolineOffset = args.hookFunctionSize - 1;
 
     // Re-enable write protection
     writeCr0(cr0);
@@ -208,4 +210,64 @@ void kernel_install_hook(struct thread *td, void *argUnused)
 
     // Re-enable write protection
     writeCr0(cr0);
+}
+
+// kernel_uninstall_hook reads the hook arguments setup at KEXEC_ARGS_BUFFER and uninstalls that hook ID. This includes
+// patching the target with original instructions and cleaning up resources used by the hook.
+void kernel_uninstall_hook(struct thread *td, void *argUnused)
+{
+    /*
+     * Resolve symbols.
+     */
+    struct dispatch_table *dispatch     = (struct dispatch_table *)(KERNEL_DISPATCH_CODE_CAVE);
+    void *map                           = (void *)(*(uint64_t *)(KERNEL_MAP));
+
+    void (*printf)(char *format, ...)                           = (void (*)(char *, ...))(KERNEL_PRINTF);
+    void (*kmem_free)(void *map, void *addr, uint64_t size)     = (void (*)(void *map, void *addr, uint64_t size))(KERNEL_KMEM_FREE);
+    int (*copyin)(const void *uaddr, void *kaddr, size_t len)   = (int (*)(const void *, void *, size_t))(KERNEL_COPYIN);
+
+    // Backup cr0 to undo write protection enable later
+    uint64_t cr0 = readCr0();
+
+    // Read arguments from the KEXEC_ARGS_BUFFER mapping
+    struct uninstall_hook_args args;
+    copyin(KEXEC_ARGS_BUFFER, &args, sizeof(struct uninstall_hook_args));
+
+    // Resolve the target address by the user-provided offset to the kernel base
+    void *targetAddr = (void *)(KERNEL_BASE + (uint64_t)args.targetOffset);
+
+    /*
+     * Get the dispatch table entry to get the payload address and trampoline
+     */
+    uint8_t *hookPayload      = (uint8_t *)dispatch->entries[args.id].payloadAddress;
+    uint32_t payloadSize      = dispatch->entries[args.id].payloadSize;
+    uint32_t trampolineOffset = dispatch->entries[args.id].trampolineOffset;
+
+    printf("[PS4-KHook] Uninstalling hook [ID: %d] @ %p (payload: %p)\n", args.id, targetAddr, hookPayload);
+
+    /*
+     * Patch trampoline back into target
+     */
+    uint8_t *kmem = (uint8_t *)targetAddr;
+
+    // Disable write protection
+    writeCr0(cr0 & ~X86_CR0_WP);
+
+    // Trampoline will go to payload size - 0x10 as the last 0x10 bytes are jump back instructions
+    for(int i = trampolineOffset; i < (payloadSize - 0x10); i++)
+        kmem[i - trampolineOffset] = hookPayload[i];
+
+    /*
+     * Free resources + clear entry in the dispatch table
+     */
+
+    // Tag value to crash on a known pointer on an uninitialized hook
+    dispatch->entries[args.id].payloadAddress   = (void *)0x32323232;
+    dispatch->entries[args.id].payloadSize      = 0;
+    dispatch->entries[args.id].trampolineOffset = 0;
+
+    // Re-enable write protection
+    writeCr0(cr0);
+
+    kmem_free(map, (void *)hookPayload, (uint64_t)payloadSize);
 }

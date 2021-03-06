@@ -14,6 +14,7 @@
 #define KERNEL_COPYIN               KERNEL_BASE + 0x001EA710
 #define KERNEL_MAP                  KERNEL_BASE + 0x01AC60E0
 #define KERNEL_KMEM_ALLOC           KERNEL_BASE + 0x000FCC80
+#define KERNEL_KMEM_FREE            KERNEL_BASE + 0x000FCE50
 #define KERNEL_PAGEDAEMON_WAKEUP    KERNEL_BASE + 0x001EE240
 
 #define KEXEC_ARGS_BUFFER           (void *)0xDEAD0000
@@ -65,7 +66,8 @@
 struct hook_dispatch_entry
 {
     void *payloadAddress;
-    uint64_t trampolineOffset;
+    uint32_t payloadSize;
+    uint32_t trampolineOffset;
 };
 
 struct dispatch_table
@@ -83,7 +85,14 @@ struct install_hook_args
     uint64_t hookFunctionSize;
 };
 
+struct uninstall_hook_args
+{
+    uint16_t id;
+    uint64_t *targetOffset;
+};
+
 void kernel_initialize_dispatch(struct thread *td, void *argsUnused);
 void kernel_install_hook(struct thread *td, void *argsUnused);
+void kernel_uninstall_hook(struct thread *td, void *argsUnused);
 
 #endif

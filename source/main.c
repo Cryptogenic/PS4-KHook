@@ -90,5 +90,23 @@ int _main(struct thread *td)
 
 	kexec(&kernel_install_hook, NULL);
 
+	// Test GC hook
+	dynlib_prepare_dlclose();
+
+	// Uninstall force GC
+    struct uninstall_hook_args *uninstallHookArgs = (struct uninstall_hook_args *)kexecArgsBuffer;
+
+    uninstallHookArgs->id = 1;
+    uninstallHookArgs->targetOffset = (uint64_t *)HOOK_DYNLIB_PREPARE_DLCLOSE;
+
+    kexec(&kernel_uninstall_hook, NULL);
+
+    sceKernelUsleep(200000);
+
+    //kexec(&kernel_test, NULL);
+
+    // Test that GC hook was uninstalled
+    dynlib_prepare_dlclose();
+
 	return 0;
 }
